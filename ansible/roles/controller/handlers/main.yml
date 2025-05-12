@@ -27,11 +27,11 @@
 #     state: restarted
 #   become: yes
 
-# - name: restart slurm services
-#   service:
-#     name: "{{ item }}"
-#     state: restarted
-#   with_items:
-#     - slurmdbd
-#     - slurmctld
-#   become: yes
+- name: restart slurm services
+  service:
+    name: "{{ item }}"
+    state: restarted
+  with_items:
+    - slurmdbd
+    - slurmctld
+  become: yes
