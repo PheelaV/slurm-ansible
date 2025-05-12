@@ -43,12 +43,12 @@ By default, the cluster uses the following IP addresses:
 
 When moving to production:
 
+0. Replace the present SSH key mechanism
 1. Generate new secure passwords
-2. Remove `.vault_password` file
-3. Re-encrypt vault with a secure password:
+2. Re-encrypt vault with a secure password:
     - `ansible-vault rekey --new-vault-password-file=/dev/tty group_vars/all/vault.yml`
-4. Remove the `vault_password_file` line from ansible.cfg
-5. Use `--ask-vault-pass` flag when running playbooks
+3. Remove the `vault_password_file` line from ansible.cfg
+4. Use `--ask-vault-pass` flag when running playbooks
 
 ## Tags for Targeted Operations
 
