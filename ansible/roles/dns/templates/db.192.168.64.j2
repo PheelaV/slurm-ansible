@@ -1,0 +1,12 @@
+$TTL    604800
+@       IN      SOA     slurm-controller. admin.slurm-cluster. (
+                            1         ; Serial
+                            604800    ; Refresh
+                            86400     ; Retry
+                            2419200   ; Expire
+                            604800 )  ; Negative Cache TTL
+;
+@       IN      NS      slurm-controller.
+10      IN      PTR     slurm-controller.slurm-cluster.
+11      IN      PTR     slurm-compute-1.slurm-cluster.
+12      IN      PTR     slurm-compute-2.slurm-cluster.

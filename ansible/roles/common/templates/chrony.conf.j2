@@ -1,0 +1,21 @@
+# Use public NTP servers
+pool time.google.com iburst
+pool 0.pool.ntp.org iburst
+pool 1.pool.ntp.org iburst
+pool 2.pool.ntp.org iburst
+
+# Record the rate at which the system clock gains/losses time
+driftfile /var/lib/chrony/drift
+
+# Allow the system clock to be stepped in the first three updates
+makestep 1.0 3
+
+# Enable kernel synchronization
+rtcsync
+
+# Access control
+allow 192.168.64.0/24
+
+# Log files
+logdir /var/log/chrony
+log tracking measurements statistics

@@ -1,0 +1,13 @@
+---
+- name: restart bind
+  service:
+    name: bind9
+    state: restarted
+  become: yes
+  when: inventory_hostname in groups['controller']
+
+- name: restart resolved
+  service:
+    name: systemd-resolved
+    state: restarted
+  become: yes

@@ -1,0 +1,93 @@
+---
+- name: Ensure Slurm directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: slurm
+    group: slurm
+    mode: "0755"
+  with_items:
+    - /etc/slurm
+    - /var/log/slurm
+    - /var/spool/slurm/d
+  become: yes
+
+- name: Install Slurm compute packages
+  apt:
+    name: slurmd
+    state: present
+    install_recommends: no # Skip recommended packages to avoid optional plugins
+  become: yes
+  register: slurmd_install
+  retries: 3
+  delay: 5
+  until: slurmd_install is success
+  ignore_errors: yes # Continue even if this fails
+
+- name: Install alternative Slurm client if slurmd fails
+  apt:
+    name: slurm-client
+    state: present
+  become: yes
+  when: slurmd_install is failed
+
+- name: Create spool directory
+  file:
+    path: /var/spool/slurm/d
+    state: directory
+    owner: slurm
+    group: slurm
+    mode: "0755"
+    recurse: yes
+  become: yes
+
+# - name: Copy slurm.conf from controller
+#   copy:
+#     src: /etc/slurm/slurm.conf
+#     dest: /etc/slurm/slurm.conf
+#     owner: slurm
+#     group: slurm
+#     mode: "0644"
+#   become: yes
+#   delegate_to: "{{ groups['controller'][0] }}"
+#   notify: restart slurmd
+- name: Copy slurm.conf from controller to compute nodes
+  block:
+    - name: Fetch slurm.conf from controller
+      fetch:
+        src: /etc/slurm/slurm.conf
+        dest: /tmp/slurm.conf
+        flat: yes
+      delegate_to: "{{ groups['controller'][0] }}"
+      run_once: true
+
+    - name: Copy slurm.conf to compute nodes
+      copy:
+        src: /tmp/slurm.conf
+        dest: /etc/slurm/slurm.conf
+        owner: slurm
+        group: slurm
+        mode: "0644"
+      become: yes
+      notify: restart slurmd
+
+- name: Verify slurm.conf exists
+  stat:
+    path: /etc/slurm/slurm.conf
+  register: slurm_conf_stat
+  become: yes
+
+- name: Display slurm.conf status
+  debug:
+    msg: "slurm.conf exists: {{ slurm_conf_stat.stat.exists }}"
+
+- name: Start and enable slurmd
+  service:
+    name: slurmd
+    state: started
+    enabled: yes
+  become: yes
+  register: slurmd_service
+  failed_when:
+    - slurmd_service is failed
+    - "'could not be found' not in slurmd_service.msg"

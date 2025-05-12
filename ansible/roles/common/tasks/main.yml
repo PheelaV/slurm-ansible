@@ -1,0 +1,135 @@
+---
+- name: Configure hosts file for cluster
+  blockinfile:
+    path: /etc/hosts
+    block: |
+      # Slurm cluster nodes
+      192.168.64.10 slurm-controller
+      192.168.64.11 slurm-compute-1
+      192.168.64.12 slurm-compute-2
+    marker: "# {mark} SLURM CLUSTER HOSTS"
+  become: yes
+
+- name: Install Chrony for time synchronization
+  apt:
+    name: chrony
+    state: present
+  become: yes
+  ignore_errors: yes # In case apt update is still failing
+
+- name: Configure Chrony with reliable time servers
+  template:
+    src: chrony.conf.j2
+    dest: /etc/chrony/chrony.conf
+    owner: root
+    group: root
+    mode: "0644"
+  become: yes
+  notify: restart chrony
+
+- name: Ensure Chrony is enabled and running
+  service:
+    name: chronyd
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Force time synchronization
+  block:
+    - name: Stop chrony service
+      service:
+        name: chrony
+        state: stopped
+      become: yes
+
+    - name: Force time synchronization with reliable server
+      command: chronyd -q 'server time.google.com iburst'
+      become: yes
+
+    - name: Start chrony service
+      service:
+        name: chrony
+        state: started
+      become: yes
+
+    - name: Wait for time to synchronize
+      pause:
+        seconds: 5
+  ignore_errors: yes # Continue even if this fails
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  become: yes
+
+- name: Install Munge package
+  apt:
+    name: munge
+    state: present
+  become: yes
+  register: munge_install
+  changed_when: false
+
+- name: Create Munge key directory
+  file:
+    path: /etc/munge
+    state: directory
+    owner: munge
+    group: munge
+    mode: "0700"
+  become: yes
+
+- name: Check if Munge key exists
+  stat:
+    path: /etc/munge/munge.key
+  register: munge_key
+  become: yes
+
+- name: Copy Munge key from controller
+  when:
+    - inventory_hostname != groups['controller'][0]
+    - not munge_key.stat.exists
+  copy:
+    src: /etc/munge/munge.key
+    dest: /etc/munge/munge.key
+    owner: munge
+    group: munge
+    mode: "0400"
+  become: yes
+  delegate_to: "{{ groups['controller'][0] }}"
+
+- name: Restart and enable Munge
+  service:
+    name: munge
+    state: restarted
+    enabled: yes
+  become: yes
+  when: munge_install.changed or munge_key.changed
+
+- name: Create slurm group
+  group:
+    name: slurm
+    system: yes
+    state: present
+  become: yes
+
+- name: Create slurm user
+  user:
+    name: slurm
+    group: slurm
+    system: yes
+    create_home: yes
+    home: /var/lib/slurm
+    shell: /bin/bash
+    comment: "Slurm Workload Manager"
+  become: yes
+
+- name: Create Slurm log directory
+  file:
+    path: /var/log/slurm
+    state: directory
+    owner: slurm
+    group: slurm
+    mode: "0755"
+  become: yes

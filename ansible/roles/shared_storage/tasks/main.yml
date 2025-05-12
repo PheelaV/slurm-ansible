@@ -1,0 +1,234 @@
+---
+# NFS Server Configuration (controller node)
+- name: Install NFS server packages on controller
+  apt:
+    name:
+      - nfs-kernel-server
+      - nfs-common
+    state: present
+  become: yes
+  when: inventory_hostname in groups['controller']
+  tags:
+    - nfs
+    - shared_storage
+
+- name: Create shared directory on controller
+  file:
+    path: /shared
+    state: directory
+    mode: "0777" # Permissive for testing
+    owner: slurmadmin
+    group: slurmadmin
+  become: yes
+  when: inventory_hostname in groups['controller']
+  tags:
+    - nfs
+    - shared_storage
+
+- name: Create Slurm tests directory
+  file:
+    path: /shared/slurm_tests
+    state: directory
+    mode: "0777"
+    owner: slurmadmin
+    group: slurmadmin
+  become: yes
+  when: inventory_hostname in groups['controller']
+  tags:
+    - nfs
+    - shared_storage
+
+- name: Configure exports on controller
+  template:
+    src: exports.j2
+    dest: /etc/exports
+    owner: root
+    group: root
+    mode: "0644"
+  become: yes
+  when: inventory_hostname in groups['controller']
+  notify: restart nfs server
+  tags:
+    - nfs
+    - shared_storage
+
+- name: Export NFS shares
+  command: exportfs -ra
+  become: yes
+  when: inventory_hostname in groups['controller']
+  changed_when: false
+  tags:
+    - nfs
+    - shared_storage
+
+# NFS Client Configuration (compute nodes)
+- name: Install NFS client packages on compute nodes
+  apt:
+    name: nfs-common
+    state: present
+  become: yes
+  when: inventory_hostname in groups['compute']
+  tags:
+    - nfs
+    - shared_storage
+
+- name: Create shared mount point on compute nodes
+  file:
+    path: /shared
+    state: directory
+    mode: "0777"
+  become: yes
+  when: inventory_hostname in groups['compute']
+  tags:
+    - nfs
+    - shared_storage
+
+- name: Mount NFS share on compute nodes
+  mount:
+    path: /shared
+    src: "{{ groups['controller'][0] }}:/shared"
+    fstype: nfs
+    opts: rw,sync
+    state: mounted
+  become: yes
+  when: inventory_hostname in groups['compute']
+  tags:
+    - nfs
+    - shared_storage
+
+# Lua plugin configuration
+- name: Install Lua development packages on controller
+  apt:
+    name:
+      - liblua5.1-0-dev
+    state: present
+    update_cache: yes
+  become: yes
+  when: inventory_hostname in groups['controller']
+  tags:
+    - nfs
+    - shared_storage
+    - slurm_config
+
+- name: Configure Slurm job submit plugin directory
+  file:
+    path: /etc/slurm/job_submit.lua.d
+    state: directory
+    owner: slurm
+    group: slurm
+    mode: "0755"
+  become: yes
+  when: inventory_hostname in groups['controller']
+  tags:
+    - nfs
+    - shared_storage
+    - slurm_config
+
+- name: Configure Slurm job submit plugin in standard directory
+  template:
+    src: job_submit.lua.j2
+    dest: /etc/slurm/job_submit.lua.d/shared_storage.lua
+    owner: slurm
+    group: slurm
+    mode: "0644"
+  become: yes
+  when: inventory_hostname in groups['controller']
+  notify: restart slurm services
+  tags:
+    - nfs
+    - shared_storage
+    - slurm_config
+
+- name: Configure Slurm job submit plugin in main location
+  template:
+    src: job_submit.lua.j2
+    dest: /etc/slurm/job_submit.lua
+    owner: slurm
+    group: slurm
+    mode: "0644"
+  become: yes
+  when: inventory_hostname in groups['controller']
+  notify: restart slurm services
+  tags:
+    - nfs
+    - shared_storage
+    - slurm_config
+
+- name: Update Slurm configuration for job submit plugin
+  lineinfile:
+    path: /etc/slurm/slurm.conf
+    regexp: "^#?JobSubmitPlugins="
+    line: "JobSubmitPlugins=lua"
+    state: present
+  become: yes
+  when: inventory_hostname in groups['controller']
+  register: slurm_config_changed
+  tags:
+    - nfs
+    - shared_storage
+    - slurm_config
+
+# Synchronize configurations to compute nodes when controller config changes
+- name: Copy slurm.conf from controller to compute nodes
+  block:
+    - name: Fetch slurm.conf from controller
+      fetch:
+        src: /etc/slurm/slurm.conf
+        dest: /tmp/slurm.conf
+        flat: yes
+      delegate_to: "{{ groups['controller'][0] }}"
+      run_once: true
+
+    - name: Copy slurm.conf to compute nodes
+      copy:
+        src: /tmp/slurm.conf
+        dest: /etc/slurm/slurm.conf
+        owner: slurm
+        group: slurm
+        mode: "0644"
+      become: yes
+  when:
+    - inventory_hostname in groups['compute']
+    - slurm_config_changed is defined
+    - slurm_config_changed.changed
+  notify: restart slurmd
+  tags:
+    - nfs
+    - shared_storage
+    - slurm_config
+
+# Verify shared storage is working
+- name: Test shared storage accessibility
+  shell: |
+    echo "NFS test from $(hostname)" > /shared/nfs_test_{{ inventory_hostname }}.txt
+    cat /shared/nfs_test_*.txt
+  become: yes
+  register: nfs_test
+  changed_when: false
+  tags:
+    - nfs
+    - shared_storage
+    - test
+
+- name: Display NFS test results
+  debug:
+    var: nfs_test.stdout_lines
+  tags:
+    - nfs
+    - shared_storage
+    - test
+
+# Restart slurmctld after config changes
+- name: Restart slurmctld if configuration changed
+  service:
+    name: slurmctld
+    state: restarted
+  become: yes
+  when:
+    - inventory_hostname in groups['controller']
+    - slurm_config_changed is defined
+    - slurm_config_changed.changed
+  tags:
+    - nfs
+    - shared_storage
+    - slurm_config

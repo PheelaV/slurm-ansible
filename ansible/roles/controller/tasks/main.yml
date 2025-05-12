@@ -1,0 +1,223 @@
+---
+- name: Install Python MySQL module
+  apt:
+    name: python3-pymysql
+    state: present
+  become: yes
+
+- name: Install MariaDB
+  apt:
+    name:
+      - mariadb-server
+      - mariadb-client
+      - libmariadb-dev
+    state: present
+  become: yes
+
+# - name: Check if MySQL root password is set
+#   command: mysql -u root -e "SELECT 1"
+#   register: mysql_root_check
+#   changed_when: false
+#   failed_when: false
+#   check_mode: no
+
+# - name: Set MySQL root password for the first time
+#   shell: |
+#     mysqladmin -u root password "rootpassword"
+#     mysql -u root -prootpassword -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY 'rootpassword';"
+#     echo "[client]\nuser=root\npassword=rootpassword" > /root/.my.cnf
+#     chmod 600 /root/.my.cnf
+#   when: mysql_root_check.rc != 0
+#   become: yes
+#   no_log: true # Hide sensitive output
+
+- name: Check if MySQL root password is set
+  command: mysql -u root -e "SELECT 1"
+  register: mysql_root_check
+  changed_when: false
+  failed_when: false
+  check_mode: no
+
+- name: Set MySQL root password for the first time
+  block:
+    - name: Set initial root password
+      mysql_user:
+        name: root
+        host: localhost
+        password: "{{ mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+      no_log: true
+
+    - name: Configure MySQL root .my.cnf
+      template:
+        src: my.cnf.j2
+        dest: /root/.my.cnf
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+  when: mysql_root_check.rc != 0
+  become: yes
+
+- name: Install Slurm controller packages
+  apt:
+    name:
+      - slurm-wlm
+      - slurmctld
+      - slurmdbd
+    state: present
+  become: yes
+
+- name: Create spool directory
+  file:
+    path: /var/spool/slurm/ctld
+    state: directory
+    owner: slurm
+    group: slurm
+    mode: "0755"
+    recurse: yes
+  become: yes
+
+- name: Ensure StateSaveLocation has correct permissions
+  file:
+    path: /var/spool/slurm/ctld
+    state: directory
+    owner: slurm
+    group: slurm
+    mode: "0755"
+    recurse: yes
+  become: yes
+
+- name: Fix ownership of Slurm directories
+  shell: |
+    chown -R slurm:slurm /var/spool/slurm
+    chown -R slurm:slurm /var/log/slurm
+    chown -R slurm:slurm /etc/slurm
+  become: yes
+  changed_when: false
+
+- name: Configure slurmdbd.conf
+  template:
+    src: slurmdbd.conf.j2
+    dest: /etc/slurm/slurmdbd.conf
+    owner: slurm
+    group: slurm
+    mode: "0600"
+  become: yes
+  notify: restart slurmdbd
+  tags:
+    - config
+    - database_credentials
+
+- name: Configure slurm.conf
+  template:
+    src: slurm.conf.j2
+    dest: /etc/slurm/slurm.conf
+    owner: slurm
+    group: slurm
+    mode: "0644"
+  become: yes
+  notify: restart slurm services
+
+# - name: Create database for Slurm (direct command)
+#   command: mysql -e "CREATE DATABASE IF NOT EXISTS slurm_acct_db"
+#   become: yes
+#   changed_when: false
+
+# - name: Create database user for Slurm (direct command)
+#   command: mysql -e "GRANT ALL ON slurm_acct_db.* TO 'slurm'@'localhost' IDENTIFIED BY 'slurmdbpass'; FLUSH PRIVILEGES;"
+#   become: yes
+#   changed_when: false
+# - name: Create database for Slurm
+#   mysql_db:
+#     name: slurm_acct_db
+#     state: present
+#     login_unix_socket: /var/run/mysqld/mysqld.sock
+#   become: yes
+
+# - name: Create database user for Slurm
+#   mysql_user:
+#     name: slurm
+#     password: "{{ slurm_db_password }}"
+#     priv: "slurm_acct_db.*:ALL"
+#     host: localhost
+#     state: present
+#   become: yes
+#   no_log: true
+
+- name: Create database for Slurm
+  mysql_db:
+    name: slurm_acct_db
+    state: present
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+  become: yes
+  no_log: true
+  tags:
+  - database
+  - database_credentials
+
+
+# - name: Create database user for Slurm
+#   mysql_user:
+#     name: slurm
+#     password: "{{ slurm_db_password }}"
+#     priv: "slurm_acct_db.*:ALL"
+#     host: localhost
+#     state: present
+#     login_unix_socket: /var/run/mysqld/mysqld.sock
+#     login_user: root
+#     login_password: "{{ mysql_root_password }}"
+#   become: yes
+# no_log: true
+- name: Create or update database user for Slurm
+  mysql_user:
+    name: slurm
+    password: "{{ slurm_db_password }}"
+    priv: "slurm_acct_db.*:ALL"
+    host: localhost
+    state: present
+    login_unix_socket: /var/run/mysqld/mysqld.sock
+    login_user: root
+    login_password: "{{ mysql_root_password }}"
+    update_password: always # This ensures password is updated if changed
+  become: yes
+  no_log: true
+  tags:
+    - database
+    - database_credentials
+
+- name: Verify database connectivity with slurm user
+  command: mysql -u slurm -p{{ slurm_db_password }} slurm_acct_db -e "SELECT 1;"
+  register: db_connectivity
+  changed_when: false
+  failed_when: db_connectivity.rc != 0
+  become: yes
+  no_log: true
+
+- name: Create additional Slurm directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: slurm
+    group: slurm
+    mode: "0755"
+  with_items:
+    - /var/run/slurm
+    - /var/run/slurmdbd
+  become: yes
+
+- name: Start and enable slurmdbd
+  service:
+    name: slurmdbd
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Start and enable slurmctld
+  service:
+    name: slurmctld
+    state: started
+    enabled: yes
+  become: yes

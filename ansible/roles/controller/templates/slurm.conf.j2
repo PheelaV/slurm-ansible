@@ -1,0 +1,33 @@
+# slurm.conf
+ClusterName=slurm-cluster
+SlurmctldHost=slurm-controller(192.168.64.10)
+
+# USER CONFIGURATION
+SlurmUser=slurm
+SlurmdUser=root
+
+# PATHS
+StateSaveLocation=/var/spool/slurm/ctld
+SlurmdSpoolDir=/var/spool/slurm/d
+
+# SCHEDULING
+SelectType=select/cons_tres
+SelectTypeParameters=CR_Core
+
+# LOGGING AND ACCOUNTING
+SlurmctldLogFile=/var/log/slurm/slurmctld.log
+SlurmdLogFile=/var/log/slurm/slurmd.log
+AccountingStorageType=accounting_storage/slurmdbd
+AccountingStorageHost=slurm-controller
+AccountingStoragePort=6819
+
+# PROCESS TRACKING
+ProctrackType=proctrack/cgroup
+TaskPlugin=task/cgroup
+
+# NODE CONFIGURATIONS
+NodeName=slurm-compute-1 NodeAddr=192.168.64.11 CPUs=2 RealMemory=3500 State=UNKNOWN
+NodeName=slurm-compute-2 NodeAddr=192.168.64.12 CPUs=2 RealMemory=3500 State=UNKNOWN
+
+# PARTITION CONFIGURATIONS
+PartitionName=debug Nodes=slurm-compute-[1-2] Default=YES MaxTime=INFINITE State=UP

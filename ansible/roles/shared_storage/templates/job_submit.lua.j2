@@ -1,0 +1,29 @@
+--
+-- Slurm job_submit plugin to use shared storage for job submissions
+-- 
+
+function slurm_job_submit(job_desc, part_list, submit_uid)
+   -- Use shared storage for job output if not specified
+   if job_desc.std_out == nil or job_desc.std_out == "" then
+      job_desc.std_out = "slurm-%j.out"
+   end
+   
+   if job_desc.std_err == nil or job_desc.std_err == "" then
+      job_desc.std_err = "slurm-%j.err"
+   end
+
+   -- Set work directory to shared location if not specified
+   if job_desc.work_dir == nil or job_desc.work_dir == "" then
+      -- Keep current directory behavior, which will be on shared storage
+      -- because users will submit from /shared/... directories
+      job_desc.work_dir = nil
+   end
+
+   return slurm.SUCCESS
+end
+
+function slurm_job_modify(job_desc, job_rec, part_list, modify_uid)
+   return slurm.SUCCESS
+end
+
+slurm.log_info("Shared storage job_submit plugin loaded")

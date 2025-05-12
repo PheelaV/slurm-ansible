@@ -1,0 +1,37 @@
+- name: restart slurmdbd
+  block:
+    - name: Restart slurmdbd service
+      service:
+        name: slurmdbd
+        state: restarted
+      become: yes
+
+    - name: Wait for service to be fully up
+      wait_for:
+        timeout: 5
+
+    - name: Validate database connectivity
+      command: mysql -u slurm -p{{ slurm_db_password }} slurm_acct_db -e "SELECT 1;"
+      register: mysql_check
+      failed_when: mysql_check.rc != 0
+      no_log: true
+
+    - name: Report database connectivity status
+      debug:
+        msg: "Database connectivity check: {{ 'SUCCESS' if mysql_check.rc == 0 else 'FAILED' }}"
+  become: yes
+# ---
+# - name: restart slurmdbd
+#   service:
+#     name: slurmdbd
+#     state: restarted
+#   become: yes
+
+# - name: restart slurm services
+#   service:
+#     name: "{{ item }}"
+#     state: restarted
+#   with_items:
+#     - slurmdbd
+#     - slurmctld
+#   become: yes

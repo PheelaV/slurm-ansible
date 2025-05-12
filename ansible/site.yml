@@ -1,0 +1,31 @@
+---
+- name: Configure common elements on all nodes
+  hosts: slurm_cluster
+  become: yes
+  roles:
+    - common
+
+# disabled for now in favor of /etc/hosts
+# - name: Configure DNS for cluster
+#   hosts: slurm_cluster
+#   become: yes
+#   roles:
+#     - dns
+
+- name: Configure shared storage for cluster
+  hosts: slurm_cluster
+  become: yes
+  roles:
+    - shared_storage
+
+- name: Configure Slurm controller node
+  hosts: controller
+  become: yes
+  roles:
+    - controller
+
+- name: Configure Slurm compute nodes
+  hosts: compute
+  become: yes
+  roles:
+    - compute

@@ -1,0 +1,21 @@
+---
+- name: restart nfs server
+  service:
+    name: nfs-kernel-server
+    state: restarted
+  become: yes
+  when: inventory_hostname in groups['controller']
+
+- name: restart slurm services
+  service:
+    name: slurmctld
+    state: restarted
+  become: yes
+  when: inventory_hostname in groups['controller']
+
+- name: restart slurmd
+  service:
+    name: slurmd
+    state: restarted
+  become: yes
+  when: inventory_hostname in groups['compute']
