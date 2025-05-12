@@ -1,10 +1,43 @@
 # Slurm Cluster Ansible Deployment
 
-This was entirely developed with the assistance of Claude Sonnet 3.7. The entire ansible playbook can be summarized by using the [summarize_playbook](./summarize_playbook.py) script in root:
+This project provides an automated deployment of a Slurm cluster using Ansible, tested on Apple Silicon using UTM virtualization. The entire ansible playbook was developed with the assistance of Claude Sonnet 3.7.
+
+## Overview
+
+This repository contains:
+
+- **Ansible playbooks** for automated deployment of a Slurm HPC cluster
+- **BATS tests** for validating cluster functionality
+- **Utility scripts** for cluster management and diagnostics
+- **Documentation** covering setup, testing, and maintenance procedures
+
+You can generate a summary of the entire Ansible playbook using the script in root:
 
 ```sh
 uv run summarize_playbook.py ./ansible
 ```
+
+## Cluster Architecture
+
+- **1 controller node** (runs slurmctld, slurmdbd, and MariaDB)
+- **2+ compute nodes** (run slurmd)
+- **Shared NFS storage** for inter-node file access
+- **Network configuration** for cluster communication
+
+By default, the cluster uses the following IP addresses:
+
+- Controller: 192.168.64.10
+- Compute-1: 192.168.64.11
+- Compute-2: 192.168.64.12
+
+## Key Features
+
+- **Fully automated deployment** using Ansible
+- **Shared storage** via NFS for job outputs and data sharing
+- **Database integration** for Slurm accounting
+- **Automated testing** using BATS
+- **Tagged operations** for targeted maintenance
+- **Security considerations** for production deployment
 
 ## Transitioning to Production Security
 
@@ -28,6 +61,7 @@ The Ansible playbook includes tags to enable targeted operations on specific com
 | `database_credentials` | Updates database credentials for Slurm accounting     | MariaDB user, slurmdbd.conf                        |
 | `database`            | General database operations                           | MariaDB database, users, permissions               |
 | `config`              | Configuration file updates                            | slurm.conf, slurmdbd.conf                          |
+| `shared_storage`      | Configures the shared storage                         | NFS server, clients, and job submit plugins        |
 
 ### Common Tag Usage
 
@@ -42,6 +76,9 @@ ansible-playbook -i inventory.ini site.yml --tags=database
 
 # Update configuration files
 ansible-playbook -i inventory.ini site.yml --tags=config
+
+# Configure shared storage
+ansible-playbook -i inventory.ini site.yml --tags=shared_storage
 ```
 
 Test changes without applying them:
@@ -51,9 +88,9 @@ Test changes without applying them:
 ansible-playbook -i inventory.ini site.yml --tags=database_credentials --check
 ```
 
-### Maintenance Procedures
+## Maintenance Procedures
 
-#### Updating Database Credentials
+### Updating Database Credentials
 
 If you need to update the Slurm database password:
 
@@ -75,7 +112,7 @@ If you need to update the Slurm database password:
    ssh slurmadmin@192.168.64.10 "sacct -X --format=JobID,JobName,State | head -5"
    ```
 
-#### Troubleshooting Database Connectivity
+### Troubleshooting Database Connectivity
 
 If Slurm accounting services (slurmdbd) cannot connect to the database:
 
@@ -99,97 +136,63 @@ If Slurm accounting services (slurmdbd) cannot connect to the database:
    ssh slurmadmin@192.168.64.10 "sudo systemctl restart slurmdbd"
    ```
 
-### Technical Notes
+## Shared Storage
 
-- The `update_password: always` parameter in the MySQL user task ensures passwords are updated when changed in the vault.
-- Password quoting in slurmdbd.conf is critical for proper database connectivity.
-- Database verification tasks ensure connections are tested after any credential changes.
+The cluster includes a shared NFS storage system to ensure job outputs are accessible across all nodes.
 
-### Security Considerations
+### Shared Storage Features
 
-- Remember that this deployment uses an SSH key for Ansible Vault password management for demonstration purposes only.
-- In production, follow the recommendations in `SECURITY_WARNING.md` for proper credential management.
+- Controller node exports the `/shared` directory
+- Compute nodes mount this shared directory
+- Job output files are stored in this location
+- Users can access job outputs from any node
+
+See [SHARED_STORAGE.md](./SHARED_STORAGE.md) for detailed information on the shared storage implementation.
 
 ## Testing
 
-Using a simple [script](./simple_test_suite.sh).
+The repository includes a comprehensive testing framework using [BATS](https://bats-core.readthedocs.io/en/stable/installation.html) (Bash Automated Testing System).
 
-WIP: Using [bats](https://bats-core.readthedocs.io/en/stable/installation.html)
-
-# Slurm Cluster BATS Tests
-
-This directory contains automated tests for the Slurm cluster using BATS (Bash Automated Testing System).
-
-## Test Structure
+### Test Structure
 
 Tests are organized into multiple files:
 
 - `01-environment.bats`: Basic environment and hostname resolution tests
 - `02-daemons.bats`: Service status and Munge authentication tests
-- `03-job-submission.bats`: Basic job submission tests
+- `03-submission.bats`: Basic job submission tests
 - `04-multinode.bats`: Multi-node job tests
 - `05-accounting.bats`: Accounting verification tests
 
-Supporting files:
-- `config.sh`: Configuration variables
-- `helpers.bash`: Helper functions used by tests
-- `run_tests.sh`: Test runner script
+### Running Tests
 
-## Running Tests
-
-### Run all tests:
 ```bash
-./run_tests.sh
+# Run all tests
+./tests/run_tests.sh
+
+# Run specific test files
+./tests/run_tests.sh 01-environment.bats
+
+# Run tests with a filter
+./tests/run_tests.sh --filter "daemon"
 ```
 
-### Run specific test files:
-```bash
-./run_tests.sh 01-environment.bats
-```
+See [TESTS.md](./TESTS.md) for more information on running and extending the test suite.
 
-### Run tests with a filter:
-```bash
-./run_tests.sh --filter "daemon"
-```
+## Technical Notes
 
-### Run only environment tests:
-```bash
-./run_tests.sh --env-only
-```
+- The `update_password: always` parameter in the MySQL user task ensures passwords are updated when changed in the vault.
+- Password quoting in slurmdbd.conf is critical for proper database connectivity.
+- Database verification tasks ensure connections are tested after any credential changes.
 
-### Run only job submission tests:
-```bash
-./run_tests.sh --job-only
-```
+## Security Considerations
 
-### Clean up after tests:
-```bash
-./run_tests.sh --cleanup
-```
+- This deployment uses an SSH key for Ansible Vault password management for demonstration purposes only.
+- In production environments, follow the recommendations in [SECURITY_WARNING.md](./ansible/SECURITY_WARNING.md) for proper credential management.
+- Always revoke default credentials and replace them with secure alternatives before production use.
 
-## Test Reports
+## Related Documentation
 
-After running the tests, two files will be created in the `../logs` directory:
-- A log file with the raw test output
-- An HTML report with formatted results
-
-## Adding New Tests
-
-To add new tests, either:
-1. Add test cases to the existing files
-2. Create new test files following the BATS format
-
-Example test case:
-```bash
-@test "My new test" {
-  run ssh $CONTROLLER "some_command"
-  [ "$status" -eq 0 ]
-}
-```
-
-## Configuration
-
-Edit `config.sh` to update:
-- Controller and compute node addresses
-- Test directory paths
-- Wait times and other parameters
+- [TESTS.md](./TESTS.md) - Detailed information on test structure and execution
+- [SHARED_STORAGE.md](./SHARED_STORAGE.md) - NFS shared storage implementation details
+- [VIBE_PLAN.md](./VIBE_PLAN.md) - Original implementation plan for the cluster
+- [SECURITY_WARNING.md](./ansible/SECURITY_WARNING.md) - Security considerations and best practices

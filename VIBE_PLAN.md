@@ -1,5 +1,7 @@
 # Objective: Basic Slurm Cluster on Apple Silicon using UTM
 
+[main](./README.md)
+
 ## Components
 
 UTM (for VM management on Apple Silicon)

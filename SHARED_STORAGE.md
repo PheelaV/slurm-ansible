@@ -1,5 +1,7 @@
 # Shared Storage for Slurm Cluster
 
+[main](./README.md)
+
 This document explains the shared storage implementation for the Slurm cluster, which enables job output files to be accessible across all nodes.
 
 ## Overview
